@@ -376,18 +376,6 @@ const editorConfig = {
 	},
 	table: {
 		contentToolbar: ['tableColumn', 'tableRow', 'mergeTableCells', 'tableProperties', 'tableCellProperties']
-	},
-	autosave: {
-		save(editor) {
-			// Get the editor content as raw HTML
-			let data = document.getElementById('editor').innerHTML;
-			
-			// Save directly to local storage without modification
-			localStorage.setItem('editorContent', data);
-			console.log('Content saved to local storage');
-			
-			return Promise.resolve();
-		}
 	}
 };
 
@@ -401,11 +389,15 @@ DecoupledEditor.create(document.querySelector('#editor'), editorConfig).then(edi
     window.editorInstance = editor;
 
     // Load saved content from local storage if available
-	const savedContent = localStorage.getItem('editorContent');
-	if (savedContent) {
-		// Set data directly in the editor to preserve CKEditor’s HTML structure
-		editor.setData(savedContent);
-	}
+    const savedContent = localStorage.getItem('editorContent');
+    if (savedContent) {
+        editor.setData(savedContent);
+    }
+
+    // Save the content to local storage on editor changes
+    editor.model.document.on('change:data', () => {
+        localStorage.setItem('editorContent', editor.getData());
+    });
 
     // Append toolbar and menu bar to the document
     document.querySelector('#editor-toolbar').appendChild(editor.ui.view.toolbar.element);
@@ -481,7 +473,7 @@ DecoupledEditor.create(document.querySelector('#editor'), editorConfig).then(edi
         document.querySelectorAll('#editor .ck-table-column-resizer').forEach(resizer => resizer.remove());
         document.querySelectorAll('#editor br[data-cke-filler="true"]').forEach(filler => filler.remove());
     }
-	
+
     function filterTable() {
 		cleanEditor();
         const searchTerm = searchInput.value.toLowerCase();
@@ -499,43 +491,68 @@ DecoupledEditor.create(document.querySelector('#editor'), editorConfig).then(edi
 
 	function sortTables() {
 		const tables = document.querySelectorAll('#editor table');
-	
+		
+		// Define the custom ranking order for the 2nd column
+		const customOrder = [
+			"व्यु.", "व्या", "सा.ल", "ल.", "ल.चि.", "पर्या", "विक.", "स्व.", "परि."
+		];		
+		
+		// Function to get the index based on custom order
+		function getCustomOrderIndex(value) {
+			const index = customOrder.indexOf(value);
+			return index !== -1 ? index : Infinity; // Return Infinity if not in custom order
+		}
+
 		tables.forEach((table) => {
 			const rows = Array.from(table.querySelectorAll('tbody tr'));
-	
+
 			// Sort rows based on cell content
 			rows.sort((a, b) => {
 				const cellsA = a.cells;
 				const cellsB = b.cells;
-	
-				for (let i = 1; i < cellsA.length; i++) {
-					const valueA = cellsA[i].textContent.trim();
-					const valueB = cellsB[i].textContent.trim();
-	
-					if (valueA > valueB) return 1;
-					if (valueA < valueB) return -1;
+				
+				// Compare values in the 2nd column based on custom order
+				const valueA = cellsA[1].textContent.trim();
+				const valueB = cellsB[1].textContent.trim();
+				
+				const orderIndexA = getCustomOrderIndex(valueA);
+				const orderIndexB = getCustomOrderIndex(valueB);
+				
+				if (orderIndexA !== orderIndexB) {
+					return orderIndexA - orderIndexB;
 				}
+
+				// Fall back to alphabetical comparison for the remaining columns
+				for (let i = 2; i < cellsA.length; i++) {
+					const cellValueA = cellsA[i].textContent.trim();
+					const cellValueB = cellsB[i].textContent.trim();
+					
+					if (cellValueA > cellValueB) return 1;
+					if (cellValueA < cellValueB) return -1;
+				}
+				
 				return 0;
 			});
-	
+
 			// Clear and re-append sorted rows
 			const tbody = table.querySelector('tbody');
 			rows.forEach(row => tbody.appendChild(row));
 		});
-	
+
 		// Cleanup extraneous CKEditor elements
 		document.querySelectorAll('#editor .ck-table-column-resizer').forEach(resizer => resizer.remove());
 		document.querySelectorAll('#editor br[data-cke-filler="true"]').forEach(filler => filler.remove());
-	
+
 		// Update CKEditor content to reflect the sorted tables
 		const updatedContent = document.querySelector('#editor').innerHTML;
 		window.editorInstance.setData(updatedContent);
-	
+
 		// Save the updated content to local storage
 		localStorage.setItem('editorContent', updatedContent);
 	}
-	
-	window.sortTables = sortTables;	
+
+	window.sortTables = sortTables;
+
 	
     return editor;
 }).catch(error => {
